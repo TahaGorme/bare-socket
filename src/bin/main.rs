@@ -35,7 +35,14 @@ fn build_error_response(status: &str, body: &str) -> String {
         body
     )
 }
-
+fn find_header<'a>(headers: &'a [(String, String)], header: &str) -> Option<&'a str> {
+    for (key, value) in headers {
+        if key == header {
+            return Some(value.as_str());
+        }
+    }
+    None
+}
 fn handle_request(mut stream: TcpStream) -> Result<()> {
     println!("new connection");
 
@@ -66,13 +73,8 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
             if path == "/" {
                 format!("{}\r\n\r\n", HTTP_200_OK)
             } else if path == "/user-agent" {
-                let mut user_agent = None;
-                for (key, value) in headers {
-                    if key == "User-Agent" {
-                        user_agent = Some(value);
-                        break;
-                    }
-                }
+                let user_agent = find_header(&headers, "User-Agent");
+
                 match user_agent {
                     None => {
                         error!("User agent not found in header");
