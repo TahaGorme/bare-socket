@@ -57,20 +57,12 @@ fn handle_user_agent(headers: &[(String, String)]) -> String {
 }
 
 fn handle_echo(path: &str) -> String {
-    let message = path.split("/echo/").nth(1);
-    println!("Message: {:?}", message);
-    match message {
-        Some(mut message) => {
-            if message == "" {
-                message = ERROR_MESSAGE_ECHO;
-            }
-            build_success_response(message)
-        }
-        None => {
-            error!("No message provided");
-            build_error_response(HTTP_FORBIDDEN, ERROR_MESSAGE_ECHO)
-        }
-    }
+    let message = path.strip_prefix("/echo/");
+    let content = match message {
+        Some(msg) if !msg.is_empty() => msg
+        _ => ERROR_MESSAGE_ECHO,
+    };
+    build_success_response(content)
 }
 fn handle_request(mut stream: TcpStream) -> Result<()> {
     println!("new connection");
