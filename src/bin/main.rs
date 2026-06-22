@@ -1,18 +1,40 @@
 use anyhow::Result;
 use log::error;
-use std::result::Result::Ok;
 use std::{
-    // any, error,
-    io::{BufRead, BufReader, Read, Write},
+    fmt::format,
+    io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
 };
 
-const SUCCESS_BASE: &str = "HTTP/1.1 200 OK";
-const SUCCESS_RESPONSE: &str = "HTTP/1.1 200 OK\r\n";
-const ERROR_RESPONSE: &str = "HTTP/1.1 404 Not Found\r\n";
-const ERROR_403: &str = "HTTP/1.1 403 Invalid Request\r\n";
-const ERROR_MESSAGE: &str = "Message is Required. Example Usage: /echo/{message}";
+//new ones
+const HTTP_200_OK: &str = "HTTP/1.1 200 OK";
+const HTTP_404_NOT_FOUND: &str = "HTTP/1.1 404 Not Found";
+const HTTP_FORBIDDEN: &str = "HTTP/1.1 403 Invalid Request";
 
+const CONTENT_TYPE_TEXT: &str = "Content-Type: text/plain";
+
+const ERROR_MESSAGE_ECHO: &str = "Message is Required. Example Usage: /echo/{message}";
+const ERROR_USER_AGENT_MISSING: &str = "User-Agent header not found";
+
+fn build_success_response(body: &str) -> String {
+    format!(
+        "{}\r\n{}\r\nContent-Length: {}\r\n\r\n{}",
+        HTTP_200_OK,
+        CONTENT_TYPE_TEXT,
+        body.len(),
+        body
+    )
+}
+
+fn build_error_response(status: &str, body: &str) -> String {
+    format!(
+        "{}\r\n{}\r\nContent-Length: {}\r\n\r\n{}",
+        status,
+        CONTENT_TYPE_TEXT,
+        body.len(),
+        body
+    )
+}
 
 fn handle_request(mut stream: TcpStream) -> Result<()> {
     println!("new connection");
@@ -42,7 +64,7 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
     let response = match path[..] {
         ["GET", path, "HTTP/1.1"] => {
             if path == "/" {
-                SUCCESS_RESPONSE.to_string()
+                format!("{}\r\n\r\n", HTTP_200_OK)
             } else if path == "/user-agent" {
                 let mut user_agent = None;
                 for (key, value) in headers {
@@ -54,14 +76,9 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
                 match user_agent {
                     None => {
                         error!("User agent not found in header");
-                        ERROR_403.to_string()
+                        format!("{}\r\n\r\n", HTTP_FORBIDDEN)
                     }
-                    Some(user_agent) => format!(
-                        "{}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                        SUCCESS_BASE,
-                        user_agent.len(),
-                        user_agent
-                    ),
+                    Some(user_agent) => build_success_response(&user_agent),
                 }
             } else if path.starts_with("/echo") {
                 let message = path.split("/echo/").nth(1);
@@ -69,33 +86,23 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
                 match message {
                     Some(mut message) => {
                         if message == "" {
-                            message = ERROR_MESSAGE;
+                            message = ERROR_MESSAGE_ECHO;
                         }
-                        format!(
-                            "{}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                            SUCCESS_BASE,
-                            message.len(),
-                            message
-                        )
+                        build_success_response(message)
                     }
                     None => {
                         error!("No message provided");
-                        format!(
-                            "{}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                            SUCCESS_BASE,
-                            ERROR_MESSAGE.len(),
-                            ERROR_MESSAGE
-                        )
+                        build_error_response("403", ERROR_MESSAGE_ECHO)
                     }
                 }
             } else {
                 println!("Random path requested");
-                ERROR_RESPONSE.to_string()
+                build_error_response("404", "Invalid path")
             }
         }
         _ => {
             error!("no path");
-            ERROR_RESPONSE.to_string()
+            build_error_response("404", "Invalid path")
         }
     };
     stream.write(response.as_bytes())?;
