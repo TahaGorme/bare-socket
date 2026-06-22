@@ -43,6 +43,18 @@ fn find_header<'a>(headers: &'a [(String, String)], header: &str) -> Option<&'a 
     }
     None
 }
+
+fn handle_user_agent(headers: &[(String, String)]) -> String {
+    let user_agent = find_header(&headers, "User-Agent");
+
+    match user_agent {
+        None => {
+            error!("User Agent header Missing");
+            build_error_response(HTTP_FORBIDDEN, ERROR_USER_AGENT_MISSING)
+        }
+        Some(user_agent) => build_success_response(&user_agent),
+    }
+}
 fn handle_request(mut stream: TcpStream) -> Result<()> {
     println!("new connection");
 
@@ -73,15 +85,7 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
             if path == "/" {
                 format!("{}\r\n\r\n", HTTP_200_OK)
             } else if path == "/user-agent" {
-                let user_agent = find_header(&headers, "User-Agent");
-
-                match user_agent {
-                    None => {
-                        error!("User agent not found in header");
-                        format!("{}\r\n\r\n", HTTP_FORBIDDEN)
-                    }
-                    Some(user_agent) => build_success_response(&user_agent),
-                }
+                handle_user_agent(&headers)
             } else if path.starts_with("/echo") {
                 let message = path.split("/echo/").nth(1);
                 println!("Message: {:?}", message);
