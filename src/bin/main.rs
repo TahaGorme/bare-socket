@@ -55,6 +55,23 @@ fn handle_user_agent(headers: &[(String, String)]) -> String {
         Some(user_agent) => build_success_response(&user_agent),
     }
 }
+
+fn handle_echo(path: &str) -> String {
+    let message = path.split("/echo/").nth(1);
+    println!("Message: {:?}", message);
+    match message {
+        Some(mut message) => {
+            if message == "" {
+                message = ERROR_MESSAGE_ECHO;
+            }
+            build_success_response(message)
+        }
+        None => {
+            error!("No message provided");
+            build_error_response(HTTP_FORBIDDEN, ERROR_MESSAGE_ECHO)
+        }
+    }
+}
 fn handle_request(mut stream: TcpStream) -> Result<()> {
     println!("new connection");
 
@@ -87,32 +104,18 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
             } else if path == "/user-agent" {
                 handle_user_agent(&headers)
             } else if path.starts_with("/echo") {
-                let message = path.split("/echo/").nth(1);
-                println!("Message: {:?}", message);
-                match message {
-                    Some(mut message) => {
-                        if message == "" {
-                            message = ERROR_MESSAGE_ECHO;
-                        }
-                        build_success_response(message)
-                    }
-                    None => {
-                        error!("No message provided");
-                        build_error_response("403", ERROR_MESSAGE_ECHO)
-                    }
-                }
+                handle_echo(path)
             } else {
                 println!("Random path requested");
-                build_error_response("404", "Invalid path")
+                build_error_response(HTTP_404_NOT_FOUND, "Invalid path")
             }
         }
         _ => {
             error!("no path");
-            build_error_response("404", "Invalid path")
+            build_error_response(HTTP_404_NOT_FOUND, "Invalid path")
         }
     };
-    stream.write(response.as_bytes())?;
-    stream.flush()?;
+    stream.write_all(response.as_bytes())?;
     Ok(())
 }
 
