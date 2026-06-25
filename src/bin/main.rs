@@ -3,7 +3,7 @@ use log::error;
 use std::{
     fmt::format,
     io::{BufRead, BufReader, Write},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream}, ptr::read,
 };
 
 //new ones
@@ -15,6 +15,14 @@ const CONTENT_TYPE_TEXT: &str = "Content-Type: text/plain";
 
 const ERROR_MESSAGE_ECHO: &str = "Message is Required. Example Usage: /echo/{message}";
 const ERROR_USER_AGENT_MISSING: &str = "User-Agent header not found";
+
+
+struct HttpRequest{
+    method: String,
+    path: String,
+    version: String,
+    headers: Vec<(String,String)>,
+}
 
 fn build_success_response(body: &str) -> String {
     format!(
@@ -59,23 +67,23 @@ fn handle_user_agent(headers: &[(String, String)]) -> String {
 fn handle_echo(path: &str) -> String {
     let message = path.strip_prefix("/echo/");
     let content = match message {
-        Some(msg) if !msg.is_empty() => msg
+        Some(msg) if !msg.is_empty() => msg,
         _ => ERROR_MESSAGE_ECHO,
     };
     build_success_response(content)
 }
-fn handle_request(mut stream: TcpStream) -> Result<()> {
-    println!("new connection");
 
-    let mut request_buffer = BufReader::new(&stream);
+
+fn parse_request(stream: &mut TcpStream)->Result<HttpRequest>{
+    let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
-    request_buffer.read_line(&mut request_line)?;
+    reader.read_line(&mut request_line)?;
 
     let mut headers: Vec<(String, String)> = Vec::new();
 
     loop {
         let mut header_line = String::new();
-        let next_header = request_buffer.read_line(&mut header_line)?;
+        let next_header = reader.read_line(&mut header_line)?;
         if header_line == "\r\n" || next_header == 0 {
             break;
         }
@@ -86,26 +94,32 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
         headers.push((key.to_string(), value.to_string()));
     }
 
-    println!("Request Line: {:?}", request_line);
-    let path: Vec<&str> = request_line.split_whitespace().collect();
+    // println!("Request Line: {:?}", request_line);
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
 
-    let response = match path[..] {
-        ["GET", path, "HTTP/1.1"] => {
-            if path == "/" {
-                format!("{}\r\n\r\n", HTTP_200_OK)
-            } else if path == "/user-agent" {
-                handle_user_agent(&headers)
-            } else if path.starts_with("/echo") {
-                handle_echo(path)
-            } else {
-                println!("Random path requested");
-                build_error_response(HTTP_404_NOT_FOUND, "Invalid path")
-            }
-        }
-        _ => {
-            error!("no path");
-            build_error_response(HTTP_404_NOT_FOUND, "Invalid path")
-        }
+    if parts.len() <3{
+        return Err(anyhow::anyhow!("Invalid request"));
+    }
+
+    Ok(HttpRequest{
+        method: parts[0].to_string(),
+        path: parts[1].to_string(),
+        version: parts[2].to_string(),
+        headers
+    })
+}
+fn handle_request(mut stream: TcpStream) -> Result<()> {
+    println!("new connection");
+    let request = parse_request(&mut stream)?;
+    let response = match request.path.as_str(){
+
+            "/" => format!("{}\r\n\r\n", HTTP_200_OK),
+              "/user-agent" => handle_user_agent(&request.headers),
+            path if path.starts_with("/echo") =>
+                handle_echo(path),
+               _=> build_error_response(HTTP_404_NOT_FOUND, "Invalid path")
+
+
     };
     stream.write_all(response.as_bytes())?;
     Ok(())
