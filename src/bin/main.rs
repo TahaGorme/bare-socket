@@ -3,12 +3,14 @@ use log::error;
 use std::{
     fmt::format,
     io::{BufRead, BufReader, Write},
-    net::{TcpListener, TcpStream}, ptr::read,
+    net::{TcpListener, TcpStream},
+    ptr::read,
 };
 
 //new ones
 const HTTP_200_OK: &str = "HTTP/1.1 200 OK";
 const HTTP_404_NOT_FOUND: &str = "HTTP/1.1 404 Not Found";
+const HTTP_405_NOT_ALLOWED: &str = "HTTP/1.1 405 Not Allowed";
 const HTTP_FORBIDDEN: &str = "HTTP/1.1 403 Invalid Request";
 
 const CONTENT_TYPE_TEXT: &str = "Content-Type: text/plain";
@@ -16,12 +18,11 @@ const CONTENT_TYPE_TEXT: &str = "Content-Type: text/plain";
 const ERROR_MESSAGE_ECHO: &str = "Message is Required. Example Usage: /echo/{message}";
 const ERROR_USER_AGENT_MISSING: &str = "User-Agent header not found";
 
-
-struct HttpRequest{
+struct HttpRequest {
     method: String,
     path: String,
     version: String,
-    headers: Vec<(String,String)>,
+    headers: Vec<(String, String)>,
 }
 
 fn build_success_response(body: &str) -> String {
@@ -73,8 +74,7 @@ fn handle_echo(path: &str) -> String {
     build_success_response(content)
 }
 
-
-fn parse_request(stream: &mut TcpStream)->Result<HttpRequest>{
+fn parse_request(stream: &mut TcpStream) -> Result<HttpRequest> {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -97,29 +97,34 @@ fn parse_request(stream: &mut TcpStream)->Result<HttpRequest>{
     // println!("Request Line: {:?}", request_line);
     let parts: Vec<&str> = request_line.split_whitespace().collect();
 
-    if parts.len() <3{
+    if parts.len() < 3 {
         return Err(anyhow::anyhow!("Invalid request"));
     }
 
-    Ok(HttpRequest{
+    Ok(HttpRequest {
         method: parts[0].to_string(),
         path: parts[1].to_string(),
         version: parts[2].to_string(),
-        headers
+        headers,
     })
 }
 fn handle_request(mut stream: TcpStream) -> Result<()> {
     println!("new connection");
     let request = parse_request(&mut stream)?;
-    let response = match request.path.as_str(){
 
-            "/" => format!("{}\r\n\r\n", HTTP_200_OK),
-              "/user-agent" => handle_user_agent(&request.headers),
-            path if path.starts_with("/echo") =>
-                handle_echo(path),
-               _=> build_error_response(HTTP_404_NOT_FOUND, "Invalid path")
+    // ignore post request
+    if request.method != "GET" {
+        let response = build_error_response(HTTP_405_NOT_ALLOWED, "Method not allowed");
+        stream.write_all(response.as_bytes())?;
+        return Ok(());
+    }
 
-
+    
+    let response = match request.path.as_str() {
+        "/" => format!("{}\r\n\r\n", HTTP_200_OK),
+        "/user-agent" => handle_user_agent(&request.headers),
+        path if path.starts_with("/echo") => handle_echo(path),
+        _ => build_error_response(HTTP_404_NOT_FOUND, "Invalid path"),
     };
     stream.write_all(response.as_bytes())?;
     Ok(())
